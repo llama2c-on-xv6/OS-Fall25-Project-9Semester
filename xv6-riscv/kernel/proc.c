@@ -58,6 +58,7 @@ procinit(void)
   }
 }
 
+
 // Must be called with interrupts disabled,
 // to prevent race with process being moved
 // to a different CPU.
@@ -132,6 +133,19 @@ found:
     return 0;
   }
 
+  p->trapframe->epc = 0; // typically 0
+  p->trapframe->sp = PGSIZE; // virtual address
+
+  //
+  // Enable the FPU for this process (Task 2a)
+  // We read the current supervisor status and set the SSTATUS_FS bits
+  // to "Initial" (01). This will be restored when we return to user mode.
+  //
+  // p->trapframe->sstatus = r_sstatus();
+  // p->trapframe->sstatus |= SSTATUS_FS;
+
+
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -147,6 +161,12 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   return p;
+}
+
+void
+exit(int status)
+{
+  kexit(status);
 }
 
 // free a proc structure and the data hanging from it,

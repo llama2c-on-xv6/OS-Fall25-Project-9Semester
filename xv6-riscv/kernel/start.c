@@ -43,6 +43,18 @@ start()
   // keep each CPU's hartid in its tp register, for cpuid().
   int id = r_mhartid();
   w_tp(id);
+    // Enable the FPU (Floating-Point Unit)
+  // Set mstatus.FS to "Initial" (01)
+  //
+  x = r_mstatus();
+  x |= MSTATUS_FS; // (1L << 13)
+  w_mstatus(x);
+
+  //
+  // Set a default rounding mode for FPU operations.
+  // RNE (Round to Nearest, ties to Even) is a common default.
+  //
+  w_fcsr(FCSR_RNE); // FCSR_RNE is 0x0
 
   // switch to supervisor mode and jump to main().
   asm volatile("mret");

@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+// #include "stdlib.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -47,31 +48,75 @@ usertrap(void)
   w_stvec((uint64)kernelvec);  //DOC: kernelvec
 
   struct proc *p = myproc();
-  
+
+  if(r_sstatus() & SSTATUS_SPP)
+    panic("usertrap: not from user mode");
+
+  // Read scause once
+  uint64 cause = r_scause();
+
+  // If this is an interrupt (MSB set), let devintr handle it immediately.
+  if ((cause >> 63) & 1UL) {
+    which_dev = devintr();
+    if (which_dev == 0) {
+      // Unknown interrupt while in user mode
+      printf("usertrap: unexpected interrupt scause %lx from pid %d\n", cause, p->pid);
+      printf("  scause %lx sepc %lx stval %lx\n", r_scause(), r_sepc(), r_stval());
+      p->killed = 1;
+    }
+  } else {
+    // Synchronous exception (no MSB)
+    if (cause == 8) {
+      // ecall from user mode (system call). Handle below with normal syscall flow.
+      // fall through to common syscall handler below
+    } else if (cause == 7) {
+      // floating-point exception
+      printf("usertrap: floating-point exception\n");
+      printf("  scause %lx sepc %lx stval %lx\n", r_scause(), r_sepc(), r_stval());
+      p->killed = 1;
+
+    } else if (cause == 2) {
+      // illegal instruction
+      printf("usertrap: illegal instruction\n");
+      printf("  scause %lx sepc %lx stval %lx\n", r_scause(), r_sepc(), r_stval());
+      p->killed = 1;
+
+    } else {
+      // other synchronous traps (e.g., page faults etc. will be handled later)
+      // don't mark killed here for cases handled later
+    }
+  }
+
+  if(p->killed)
+    exit(-1);
+
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
-    // system call
 
+  // Handle syscalls (ecall from user)
+  if (cause == 8) {
     if(killed(p))
       kexit(-1);
 
-    // sepc points to the ecall instruction,
-    // but we want to return to the next instruction.
+    // sepc points to the ecall instruction; advance to next instruction.
     p->trapframe->epc += 4;
 
-    // an interrupt will change sepc, scause, and sstatus,
-    // so enable only now that we're done with those registers.
+    // enable interrupts for syscall handling
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
-    // ok
-  } else if((r_scause() == 15 || r_scause() == 13) &&
-            vmfault(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) != 0) {
-    // page fault on lazily-allocated page
+
+  // If device interrupt already handled above, which_dev will be set.
+  } else if (which_dev != 0) {
+    // nothing more to do here for device interrupt; will yield later if timer
+
+  // Page fault lazy allocation handling (preserve original ordering)
+  } else if ((r_scause() == 15 || r_scause() == 13) &&
+             vmfault(p->pagetable, r_stval(), (r_scause() == 13) ? 1 : 0) != 0) {
+    // vmfault handled; continue
+
   } else {
+    // Unexpected synchronous trap not handled above
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
@@ -80,9 +125,8 @@ usertrap(void)
   if(killed(p))
     kexit(-1);
 
-
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if (which_dev == 2)
     yield();
 
   prepare_return();
@@ -93,6 +137,7 @@ usertrap(void)
   // return to trampoline.S; satp value in a0.
   return satp;
 }
+
 
 //
 // set up trapframe and control registers for a return to user space

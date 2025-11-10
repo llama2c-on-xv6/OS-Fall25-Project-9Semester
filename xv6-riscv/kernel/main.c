@@ -36,6 +36,17 @@ main()
     netinit();
 #endif    
     userinit();      // first user process
+        // *** FPU Initialization: Enable Floating-Point Unit Globally ***
+    // We set the FS field (bits 13 and 14) of sstatus to Initial (01).
+    // This allows the use of FPU in S-mode and U-mode.
+    uint64 sstatus = r_sstatus();
+    sstatus &= ~(3L << 13); // Clear the FS field (bits 13, 14)
+    sstatus |= (1L << 13);  // Set FS to Initial (01)
+    w_sstatus(sstatus);
+    // **********************************
+
+    __sync_synchronize();
+    started = 1;
 #ifdef KCSAN
     kcsaninit();
 #endif

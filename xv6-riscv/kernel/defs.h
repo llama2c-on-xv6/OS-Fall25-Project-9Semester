@@ -16,6 +16,8 @@ struct superblock;
 struct rwspinlock;
 #endif
 
+void exit(int);
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);

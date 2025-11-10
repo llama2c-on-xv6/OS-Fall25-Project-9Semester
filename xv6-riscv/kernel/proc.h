@@ -1,4 +1,7 @@
 // Saved registers for kernel context switches.
+// add after existing registers/state in struct proc
+// #define NFREGS 32
+
 struct context {
   uint64 ra;
   uint64 sp;
@@ -16,6 +19,46 @@ struct context {
   uint64 s9;
   uint64 s10;
   uint64 s11;
+
+  //
+  // Add storage for FPU registers (Task 2b)
+  // We save all 32 floating-point registers
+  //
+  uint64 f0;
+  uint64 f1;
+  uint64 f2;
+  uint64 f3;
+  uint64 f4;
+  uint64 f5;
+  uint64 f6;
+  uint64 f7;
+  uint64 f8;
+  uint64 f9;
+  uint64 f10;
+  uint64 f11;
+  uint64 f12;
+  uint64 f13;
+  uint64 f14;
+  uint64 f15;
+  uint64 f16;
+  uint64 f17;
+  uint64 f18;
+  uint64 f19;
+  uint64 f20;
+  uint64 f21;
+  uint64 f22;
+  uint64 f23;
+  uint64 f24;
+  uint64 f25;
+  uint64 f26;
+  uint64 f27;
+  uint64 f28;
+  uint64 f29;
+  uint64 f30;
+  uint64 f31;
+  
+  // Storage for Floating-Point Control and Status Register
+  uint64 fcsr;
 };
 
 // Per-CPU state.
@@ -104,4 +147,13 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+   // Floating-point registers saved for this process
+  // Store as 64-bit to hold binary64 representation of f registers.
+  // RISC-V F-extension uses 64-bit f registers in RV64.
+  //unsigned long fregs[NFREGS];   // f0..f31
+  //unsigned int fcsr;             // floating-point control and status register
+
+  // a flag to indicate whether this process has used the FPU (for lazy save/restore)
+ // int has_fpu;
 };

@@ -16,6 +16,43 @@ r_mhartid()
 #define MSTATUS_MPP_S (1L << 11)
 #define MSTATUS_MPP_U (0L << 11)
 
+#define MSTATUS_MIE (1L << 3)    // Machine-mode interrupt enable
+#define MSTATUS_SIE (1L << 1)    // Supervisor-mode interrupt enable
+#define MSTATUS_UIE (1L << 0)    // User-mode interrupt enable
+
+// Add this definition for MSTATUS_FS (Floating-point Status)
+#define MSTATUS_FS (3L << 13) // FS field: 00=Off, 01=Initial, 10=Clean, 11=Dirty
+
+// Supervisor Status Register, sstatus
+#define SSTATUS_SPP (1L << 8)  // Previous privilege mode, 1=Supervisor, 0=User
+#define SSTATUS_SPIE (1L << 5) // Supervisor previous interrupt enable
+#define SSTATUS_UPIE (1L << 4) // User previous interrupt enable
+#define SSTATUS_SIE (1L << 1)  // Supervisor interrupt enable
+#define SSTATUS_UIE (1L << 0)  // User interrupt enable
+
+// Add this definition for SSTATUS_FS
+#define SSTATUS_FS (3L << 13) // FS field: 00=Off, 01=Initial, 10=Clean, 11=Dirty
+
+// ... (existing content like r_sip, w_sip, r_sbadaddr)
+
+// Floating-Point Control and Status Register, fcsr
+// Add this definition for Rounding Mode (RNE)
+#define FCSR_RNE (0x0 << 5) // Round to Nearest, ties to Even
+
+static inline void 
+w_fcsr(uint64 x)
+{
+  asm volatile("fscsr %0" : : "r" (x));
+}
+
+static inline uint64
+r_fcsr()
+{
+  uint64 x;
+  asm volatile("frcsr %0" : "=r" (x));
+  return x;
+}
+
 static inline uint64
 r_mstatus()
 {
