@@ -22,6 +22,24 @@ swtch:
         sd s10, 96(a0)
         sd s11, 104(a0)
 
+        // save floating registers f0..f31 into old context at offsets starting at 112
+        fsd f0, 112(a0)
+        fsd f1, 120(a0)
+        // ...
+        fsd f31, 360(a0)
+        // save fcsr
+        frcsr t0
+        sd t0, 368(a0)
+
+        // restore floating registers f0..f31 from new context at offsets starting at 112
+        fld f0, 112(a1)
+        fld f1, 120(a1)
+        // ...
+        fld f31, 360(a1)
+        // restore fcsr
+        ld t0, 368(a1)
+        fscsr t0
+
         ld ra, 0(a1)
         ld sp, 8(a1)
         ld s0, 16(a1)
