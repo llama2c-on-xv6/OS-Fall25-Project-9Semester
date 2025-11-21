@@ -197,6 +197,7 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_fputest\
+	$U/_sha256\
 
 
 
