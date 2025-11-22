@@ -3,10 +3,20 @@
 // to be used with nettest.py (run outside of qemu)
 //
 
-#include "kernel/types.h"
-#include "kernel/net.h"
+
+#include "kernel/types.h"   
 #include "kernel/stat.h"
-#include "user/user.h"
+#include "kernel/net.h"
+#include "user/user.h"         
+
+#ifndef NET_TESTS_PORT
+#define NET_TESTS_PORT 2000
+#endif
+
+
+
+
+
 
 //
 // send a single UDP packet (but don't recv() the reply).
@@ -14,6 +24,8 @@
 // this packet, and you can also see what
 // happened with tcpdump -XXnr packets.pcap
 //
+
+
 void
 txone()
 {

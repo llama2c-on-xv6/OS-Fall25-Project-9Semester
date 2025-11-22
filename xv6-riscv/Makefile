@@ -235,7 +235,9 @@ UPROGS += \
 endif
 
 UPROGS += \
-$U/_cowtest
+	$U/_cowtest
+UPROGS += \
+	$U/_nettest
 
 ifeq ($(LAB),thread)
 UPROGS += \
@@ -277,10 +279,6 @@ UPROGS += \
 	$U/_mmaptest
 endif
 
-ifeq ($(LAB),net)
-UPROGS += \
-	$U/_nettest
-endif
 
 UEXTRA=
 ifeq ($(LAB),util)
@@ -331,7 +329,7 @@ QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 ifeq ($(LAB),net)
 QEMUOPTS += -netdev user,id=net0,hostfwd=udp::$(FWDPORT1)-:2000,hostfwd=udp::$(FWDPORT2)-:2001 -object filter-dump,id=net0,netdev=net0,file=packets.pcap
-QEMUOPTS += -device e1000,netdev=net0,bus=pcie.0
+QEMUOPTS += -device e1000,netdev=net0,bus=pcie.0,romfile=
 endif
 
 # makes a new fs.img

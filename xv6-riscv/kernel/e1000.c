@@ -26,11 +26,16 @@ struct spinlock e1000_lock;
 void
 e1000_init(uint32 *xregs)
 {
+
+  printf("e1000_init called: xregs=%p\n", xregs);
+
   int i;
 
   initlock(&e1000_lock, "e1000");
 
   regs = xregs;
+
+  printf("e1000: regs=%p\n", regs);  // also printf
 
   // Reset the device
   regs[E1000_IMS] = 0; // disable interrupts
@@ -90,6 +95,7 @@ e1000_init(uint32 *xregs)
   regs[E1000_IMS] = (1 << 7); // RXDW -- Receiver Descriptor Write Back
 }
 
+/*
 int
 e1000_transmit(char *buf, int len)
 {
@@ -120,6 +126,78 @@ e1000_recv(void)
   //
 
 }
+*/
+
+
+static void
+e1000_recv(void)
+{
+  acquire(&e1000_lock);
+
+  // index of last descriptor driver handed to device
+  int rdt = regs[E1000_RDT] % RX_RING_SIZE;
+  // next descriptor the device will have filled (if any)
+  int idx = (rdt + 1) % RX_RING_SIZE;
+
+  while (rx_ring[idx].status & E1000_RXD_STAT_DD) {
+    int pkt_len = (int) rx_ring[idx].length;  // length written by device
+    char *pkt_buf = (char *) rx_ring[idx].addr;
+
+    // sanity: if addr==0, skip (device shouldn't have written to a 0 addr)
+    if (!pkt_buf) {
+      // clear and hand back
+      rx_ring[idx].status = 0;
+      rx_ring[idx].length = 0;
+      regs[E1000_RDT] = idx;
+      idx = (idx + 1) % RX_RING_SIZE;
+      continue;
+    }
+
+    // Allocate a fresh buffer to replace this descriptor's buffer.
+    // We allocate while still holding e1000_lock so we can atomically update
+    // the descriptor and RDT before releasing the lock.
+    char *newbuf = kalloc();
+    if (!newbuf) {
+      // OOM: don't hand the descriptor back with a bad addr; clear so device skips.
+      rx_ring[idx].addr = 0;
+      rx_ring[idx].status = 0;
+      rx_ring[idx].length = 0;
+      regs[E1000_RDT] = idx;
+      idx = (idx + 1) % RX_RING_SIZE;
+      continue;
+    }
+
+    // Install new buffer into descriptor for future DMA.
+    rx_ring[idx].addr = (uint64) newbuf;
+    rx_ring[idx].length = 0;
+    rx_ring[idx].csum = 0;
+    rx_ring[idx].status = 0;
+    rx_ring[idx].errors = 0;
+    rx_ring[idx].special = 0;
+
+    // Make sure descriptor writes are visible before RDT update.
+    __sync_synchronize();
+
+    // Tell device we've replenished the descriptor at idx
+    regs[E1000_RDT] = idx;
+
+    // Advance to next descriptor before releasing lock
+    idx = (idx + 1) % RX_RING_SIZE;
+
+    // release the e1000 lock before handing the packet to the network stack
+    release(&e1000_lock);
+
+    // Hand the packet to the network stack (net_rx takes ownership of pkt_buf).
+    net_rx(pkt_buf, pkt_len);
+
+    // Re-acquire to continue processing the RX ring
+    acquire(&e1000_lock);
+  }
+
+  release(&e1000_lock);
+}
+
+
 
 void
 e1000_intr(void)
@@ -131,3 +209,53 @@ e1000_intr(void)
 
   e1000_recv();
 }
+
+
+int
+e1000_transmit(char *buf, int len)
+{
+  //
+  // Place the ethernet frame `buf` (len bytes) into the TX descriptor ring
+  // for DMA by the E1000. On success return 0 (driver owns the buffer and
+  // will kfree() it later). On failure return -1 (caller must free buf).
+  //
+  acquire(&e1000_lock);
+
+  // Read the device TDT (tail) register: index where device expects next desc.
+  int tdt = regs[E1000_TDT] % TX_RING_SIZE;
+
+  // If the descriptor isn't free (DD not set) the ring is full.
+  if (!(tx_ring[tdt].status & E1000_TXD_STAT_DD)) {
+    // ring full: cannot transmit now
+    release(&e1000_lock);
+    return -1;
+  }
+
+  // If the descriptor previously referenced a buffer, free it.
+  if (tx_ring[tdt].addr) {
+    // addr contains the kernel pointer previously used for DMA
+    kfree((char *)tx_ring[tdt].addr);
+    tx_ring[tdt].addr = 0;
+  }
+
+  // Program the descriptor for this packet.
+  tx_ring[tdt].addr = (uint64) buf;     // DMA address of buffer
+  tx_ring[tdt].length = (uint16) len;   // length field is 16-bit in header
+  tx_ring[tdt].cso = 0;
+  // Set command: End Of Packet and Report Status
+  tx_ring[tdt].cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
+  // Clear the status; hardware will set DD when done
+  tx_ring[tdt].status = 0;
+  tx_ring[tdt].css = 0;
+  tx_ring[tdt].special = 0;
+
+  // Make sure descriptor writes are visible to device before updating TDT
+  __sync_synchronize();
+
+  // Advance the device tail so the card will fetch this descriptor.
+  regs[E1000_TDT] = (tdt + 1) % TX_RING_SIZE;
+
+  release(&e1000_lock);
+  return 0;
+}
+

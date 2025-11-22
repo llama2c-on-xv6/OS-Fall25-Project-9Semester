@@ -2,6 +2,17 @@
 // endianness support
 //
 
+
+
+//int send(int srcport, uint32 dst, int dport, char *buf, int len);
+//int recv(int port, uint32 *src, uint16 *sport, char *buf, int maxlen);
+//void bind(int port);
+
+
+
+
+
+
 static inline uint16 bswaps(uint16 val)
 {
   return (((val & 0x00ffU) << 8) |

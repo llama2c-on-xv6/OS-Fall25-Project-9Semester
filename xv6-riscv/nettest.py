@@ -13,11 +13,15 @@ import os
 # qemu listens for packets sent to FWDPORT,
 # and re-writes them so they arrive in
 # xv6 with destination port 2000.
-FWDPORT1 = (os.getuid() % 5000) + 25999
-FWDPORT2 = (os.getuid() % 5000) + 30999
 
-# xv6's nettest.c tx sends to SERVERPORT.
-SERVERPORT = (os.getuid() % 5000) + 25099
+pid_mod = (os.getpid() % 5000)  # Windows-safe replacement for getuid
+FWDPORT1 = pid_mod + 25999
+FWDPORT2 = pid_mod + 30999
+SERVERPORT = pid_mod + 25099
+
+print("FWDPORT1 =", FWDPORT1, "FWDPORT2 =", FWDPORT2, "SERVERPORT =", SERVERPORT)
+
+
 
 def usage():
     sys.stderr.write("Usage: nettest.py txone\n")
