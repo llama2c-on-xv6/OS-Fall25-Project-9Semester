@@ -94,7 +94,36 @@ int
 e1000_transmit(char *buf, int len)
 {
   //
-  // Your code here.
+  acquire(&e1000_lock);
+
+  // 1. Get the current transmit ring index (TDT)
+  uint32 idx = regs[E1000_TDT];
+
+  // 2. Check if the ring is overflowing
+  // If the DD (Descriptor Done) bit is NOT set, the E1000 is still using this descriptor.
+  if((tx_ring[idx].status & E1000_TXD_STAT_DD) == 0){
+    release(&e1000_lock);
+    return -1;
+  }
+
+  // 3. Free the old mbuf at this slot if it exists
+  if(tx_mbufs[idx]){
+    mbuffree(tx_mbufs[idx]);
+  }
+
+  // 4. Stash the new mbuf pointer for later freeing
+  tx_mbufs[idx] = m;
+
+  // 5. Fill in the descriptor
+  tx_ring[idx].addr = (uint64)m->head;
+  tx_ring[idx].length = m->len;
+  // CMD_EOP: End of Packet, CMD_RS: Report Status (sets DD bit when done)
+  tx_ring[idx].cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS; 
+
+  // 6. Update TDT to the next index modulo ring size
+  regs[E1000_TDT] = (idx + 1) % TX_RING_SIZE;
+
+  release(&e1000_lock);
   //
   // buf contains an ethernet frame; program it into
   // the TX descriptor ring so that the e1000 sends it. Stash
@@ -113,7 +142,42 @@ static void
 e1000_recv(void)
 {
   //
-  // Your code here.
+  // Loop to handle multiple packets in one interrupt
+  while(1){
+    // 1. Get the next ring index (RDT + 1)
+    // RDT points to the last descriptor given TO the hardware, so RDT+1 is the next one to check.
+    uint32 idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+
+    // 2. Check if a new packet is available (DD bit set)
+    if((rx_ring[idx].status & E1000_RXD_STAT_DD) == 0){
+      break; // No more packets processed by hardware
+    }
+
+    // 3. Get the mbuf and update length
+    struct mbuf *m = rx_mbufs[idx];
+    m->len = rx_ring[idx].length;
+
+    // 4. Deliver to network stack
+    // We must NOT hold e1000_lock here because net_rx might call into other locking code
+    net_rx(m);
+
+    // 5. Allocate a new mbuf to replace the one sent up
+    struct mbuf *new_m = mbufalloc(0);
+    if(!new_m){
+      // If allocation fails, we can't replenish the ring right now.
+      // In a robust driver, we might drop the packet and reuse the old mbuf.
+      // For this lab, panic or handling it gracefully is acceptable, but ensuring replacement is key.
+      panic("e1000_recv: mbufalloc failed");
+    }
+    rx_mbufs[idx] = new_m;
+
+    // 6. Reset descriptor for next use
+    rx_ring[idx].addr = (uint64)new_m->head;
+    rx_ring[idx].status = 0;
+
+    // 7. Advance RDT
+    regs[E1000_RDT] = idx;
+  } 
   //
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).

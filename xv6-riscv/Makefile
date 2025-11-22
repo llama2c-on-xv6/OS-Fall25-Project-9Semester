@@ -37,7 +37,11 @@ OBJS_KCSAN = \
   $K/console.o \
   $K/printf.o \
   $K/uart.o \
-  $K/spinlock.o
+  $K/spinlock.o \
+  $K/net.o \
+  $K/e1000.o \
+  $K/pci.o
+
 
 ifdef KCSAN
 OBJS_KCSAN += \
@@ -51,12 +55,12 @@ OBJS += \
 endif
 
 
-ifeq ($(LAB),net)
-OBJS += \
-	$K/e1000.o \
-	$K/net.o \
-	$K/pci.o
-endif
+# ifeq ($(LAB),net)
+# OBJS += \
+# 	$K/e1000.o \
+# 	$K/net.o \
+# 	$K/pci.o
+# endif
 
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
@@ -200,6 +204,7 @@ UPROGS=\
 	$U/_dorphan\
 	$U/_fputest\
 	$U/_sha256\
+	$U/_nettest\
 
 
 

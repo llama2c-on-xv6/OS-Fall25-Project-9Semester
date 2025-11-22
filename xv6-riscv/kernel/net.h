@@ -27,7 +27,7 @@ static inline uint32 bswapl(uint32 val)
 //
 // useful networking headers
 //
-
+#define NET_TESTS_PORT 25603
 #define ETHADDR_LEN 6
 
 // an Ethernet packet header (start of the packet).

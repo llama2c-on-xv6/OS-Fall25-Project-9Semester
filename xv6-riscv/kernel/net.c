@@ -9,6 +9,8 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "net.h"
+#include "e1000.c"
+
 
 // xv6's ethernet and IP addresses
 static uint8 local_mac[ETHADDR_LEN] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
@@ -16,6 +18,23 @@ static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15);
 
 // qemu host's ethernet address.
 static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
+
+//manage "Sockets" (bound ports) and a queue to hold packets for those sockets
+struct rx_packet {
+  char *buf;            // The 4KB buffer containing the packet
+  int len;              // Length of valid data
+  struct rx_packet *next;
+};
+
+struct sock {
+  int port;             // Local port we are listening on
+  struct rx_packet *head; // Queue head
+  struct rx_packet *tail; // Queue tail
+  struct spinlock lock; // Protects this socket's queue
+  struct sock *next;    // Linked list of all sockets
+};
+
+struct sock *sockets = 0; // Head of the global socket list
 
 static struct spinlock netlock;
 
@@ -30,15 +49,50 @@ netinit(void)
 // bind(int port)
 // prepare to receive UDP packets address to the port,
 // i.e. allocate any queues &c needed.
-//
+
+// This function checks if a port is taken. If not, 
+// it allocates a new socket structure and adds it to the
+// list.
 uint64
 sys_bind(void)
 {
-  //
-  // Your code here.
-  //
+  int port;
+  struct sock *s;
 
-  return -1;
+  if(argint(0, &port) < 0)
+    return -1;
+
+  acquire(&netlock);
+  // 1. Check if port is already in use
+  for(s = sockets; s; s = s->next){
+    if(s->port == port){
+      release(&netlock);
+      return -1;
+    }
+  }
+
+  // 2. Allocate new socket
+  // We use kalloc() to get a page, then cast it to struct sock.
+  // It's a bit wasteful (uses 4096 bytes for a small struct), but standard xv6 
+  // doesn't have a general purpose malloc.
+  s = (struct sock*)kalloc();
+  if(s == 0){
+    release(&netlock);
+    return -1;
+  }
+  
+  memset(s, 0, PGSIZE);
+  s->port = port;
+  initlock(&s->lock, "sock");
+  s->head = 0;
+  s->tail = 0;
+
+  // 3. Add to global list
+  s->next = sockets;
+  sockets = s;
+
+  release(&netlock);
+  return 0;
 }
 
 //
@@ -74,10 +128,75 @@ sys_unbind(void)
 uint64
 sys_recv(void)
 {
-  //
-  // Your code here.
-  //
-  return -1;
+  int dport;
+  uint64 src_addr, sport_addr, buf_addr;
+  int maxlen;
+
+  if(argint(0, &dport) < 0 ||
+     argaddr(1, &src_addr) < 0 ||
+     argaddr(2, &sport_addr) < 0 ||
+     argaddr(3, &buf_addr) < 0 ||
+     argint(4, &maxlen) < 0)
+    return -1;
+
+  // 1. Find the socket
+  acquire(&netlock);
+  struct sock *s;
+  for(s = sockets; s; s = s->next){
+    if(s->port == dport) break;
+  }
+  release(&netlock);
+
+  if(s == 0) return -1; // Not bound
+
+  acquire(&s->lock);
+
+  // 2. Wait for a packet
+  while(s->head == 0){
+    if(myproc()->killed){
+      release(&s->lock);
+      return -1;
+    }
+    sleep(s, &s->lock);
+  }
+
+  // 3. Dequeue packet
+  struct rx_packet *pkt = s->head;
+  s->head = pkt->next;
+  if(s->head == 0) s->tail = 0;
+  
+  release(&s->lock);
+
+  // 4. Extract Header Info
+  // We need to recalculate pointers because 'buf' is the raw start of the frame
+  struct eth *eth = (struct eth *)pkt->buf;
+  struct ip *ip = (struct ip *)(eth + 1);
+  struct udp *udp = (struct udp *)(ip + 1);
+  char *payload = (char *)(udp + 1);
+
+  uint32 src_ip = ntohl(ip->ip_src);
+  uint16 src_port = ntohs(udp->sport);
+  
+  // Calculate actual payload length
+  // UDP header length field includes the 8-byte UDP header itself
+  int payload_len = ntohs(udp->ulen) - sizeof(struct udp);
+  if(payload_len > maxlen) payload_len = maxlen;
+
+  // 5. Copy out to user
+  if(copyout(myproc()->pagetable, src_addr, (char*)&src_ip, sizeof(src_ip)) < 0 ||
+     copyout(myproc()->pagetable, sport_addr, (char*)&src_port, sizeof(src_port)) < 0 ||
+     copyout(myproc()->pagetable, buf_addr, payload, payload_len) < 0)
+  {
+    kfree(pkt->buf);
+    kfree((char*)pkt);
+    return -1;
+  }
+
+  // 6. Cleanup
+  kfree(pkt->buf);      // Free the packet data buffer
+  kfree((char*)pkt);    // Free the queue node
+  
+  return payload_len;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -179,6 +298,7 @@ sys_send(void)
   return 0;
 }
 
+//is UDP? & is passed to bind()?
 void
 ip_rx(char *buf, int len)
 {
@@ -188,10 +308,62 @@ ip_rx(char *buf, int len)
     printf("ip_rx: received an IP packet\n");
   seen_ip = 1;
 
-  //
-  // Your code here.
-  //
-  
+  struct eth *eth = (struct eth *)buf;
+  struct ip *ip = (struct ip *)(eth + 1);
+  struct udp *udp = (struct udp *)(ip + 1);
+
+  // 1. Check if protocol is UDP
+  if(ip->ip_p != IPPROTO_UDP){
+    kfree(buf); // Not UDP, we are done with it
+    return;
+  }
+
+  // 2. Get Destination Port (Network to Host order)
+  uint16 dport = ntohs(udp->dport);
+
+  acquire(&netlock);
+  struct sock *s;
+  for(s = sockets; s; s = s->next){
+    if(s->port == dport) break;
+  }
+  release(&netlock);
+
+  // 3. If socket found, try to enqueue
+  if(s){
+    acquire(&s->lock);
+
+    // Count queue size to prevent DoS (limit 16)
+    int qlen = 0;
+    struct rx_packet *p = s->head;
+    while(p){ qlen++; p = p->next; }
+
+    if(qlen < 16){
+      // Create a queue node
+      struct rx_packet *node = (struct rx_packet*)kalloc();
+      if(node){
+        node->buf = buf;
+        node->len = len;
+        node->next = 0;
+
+        // Add to tail
+        if(s->tail){
+          s->tail->next = node;
+          s->tail = node;
+        } else {
+          s->head = node;
+          s->tail = node;
+        }
+        
+        wakeup(s); // Wake up sys_recv
+        release(&s->lock);
+        return; // PACKET CONSUMED, do NOT kfree(buf)
+      }
+    }
+    release(&s->lock);
+  }
+
+  // If we get here: either no socket found, queue full, or alloc failed.
+  kfree(buf);
 }
 
 //
