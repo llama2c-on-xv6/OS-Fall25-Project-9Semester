@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "e1000_dev.h"
+#include "net.h"
 
 #define TX_RING_SIZE 16
 static struct tx_desc tx_ring[TX_RING_SIZE] __attribute__((aligned(16)));
@@ -18,134 +19,114 @@ static volatile uint32 *regs;
 
 struct spinlock e1000_lock;
 
+static void e1000_recv(void);
+
+
 // called by pci_init().
 // xregs is the memory address at which the
 // e1000's registers are mapped.
-// this code loosely follows the initialization directions
-// in Chapter 14 of Intel's Software Developer's Manual.
 void
 e1000_init(uint32 *xregs)
 {
-
-  printf("e1000_init called: xregs=%p\n", xregs);
+//  printf("e1000_init called: xregs=%p\n", xregs);
 
   int i;
 
   initlock(&e1000_lock, "e1000");
-
   regs = xregs;
 
-  printf("e1000: regs=%p\n", regs);  // also printf
-
-  // Reset the device
-  regs[E1000_IMS] = 0; // disable interrupts
+  // Reset device
+  regs[E1000_IMS] = 0;
   regs[E1000_CTL] |= E1000_CTL_RST;
-  regs[E1000_IMS] = 0; // redisable interrupts
+  regs[E1000_IMS] = 0;
   __sync_synchronize();
 
-  // [E1000 14.5] Transmit initialization
+  //
+  // TX init
+  //
   memset(tx_ring, 0, sizeof(tx_ring));
   for (i = 0; i < TX_RING_SIZE; i++) {
     tx_ring[i].status = E1000_TXD_STAT_DD;
     tx_ring[i].addr = 0;
   }
-  regs[E1000_TDBAL] = (uint64) tx_ring;
-  if(sizeof(tx_ring) % 128 != 0)
+
+  regs[E1000_TDBAL] = (uint64)tx_ring;
+
+  if (sizeof(tx_ring) % 128 != 0)
     panic("e1000");
+
   regs[E1000_TDLEN] = sizeof(tx_ring);
   regs[E1000_TDH] = regs[E1000_TDT] = 0;
-  
-  // [E1000 14.4] Receive initialization
+
+  //
+  // RX init
+  //
   memset(rx_ring, 0, sizeof(rx_ring));
+
   for (i = 0; i < RX_RING_SIZE; i++) {
-    rx_ring[i].addr = (uint64) kalloc();
+    rx_ring[i].addr = (uint64)kalloc();
     if (!rx_ring[i].addr)
       panic("e1000");
   }
-  regs[E1000_RDBAL] = (uint64) rx_ring;
-  if(sizeof(rx_ring) % 128 != 0)
+
+  regs[E1000_RDBAL] = (uint64)rx_ring;
+
+  if (sizeof(rx_ring) % 128 != 0)
     panic("e1000");
+
   regs[E1000_RDH] = 0;
   regs[E1000_RDT] = RX_RING_SIZE - 1;
   regs[E1000_RDLEN] = sizeof(rx_ring);
 
-  // filter by qemu's MAC address, 52:54:00:12:34:56
+  // filter by qemu's MAC address: 52:54:00:12:34:56
   regs[E1000_RA] = 0x12005452;
-  regs[E1000_RA+1] = 0x5634 | (1<<31);
+  regs[E1000_RA + 1] = 0x5634 | (1 << 31);
+
   // multicast table
-  for (int i = 0; i < 4096/32; i++)
+  for (int i = 0; i < 4096 / 32; i++)
     regs[E1000_MTA + i] = 0;
 
-  // transmitter control bits.
-  regs[E1000_TCTL] = E1000_TCTL_EN |  // enable
-    E1000_TCTL_PSP |                  // pad short packets
-    (0x10 << E1000_TCTL_CT_SHIFT) |   // collision stuff
-    (0x40 << E1000_TCTL_COLD_SHIFT);
-  regs[E1000_TIPG] = 10 | (8<<10) | (6<<20); // inter-pkt gap
+  // TX control
+  regs[E1000_TCTL] =
+      E1000_TCTL_EN |
+      E1000_TCTL_PSP |
+      (0x10 << E1000_TCTL_CT_SHIFT) |
+      (0x40 << E1000_TCTL_COLD_SHIFT);
 
-  // receiver control bits.
-  regs[E1000_RCTL] = E1000_RCTL_EN | // enable receiver
-    E1000_RCTL_BAM |                 // enable broadcast
-    E1000_RCTL_SZ_2048 |             // 2048-byte rx buffers
-    E1000_RCTL_SECRC;                // strip CRC
-  
-  // ask e1000 for receive interrupts.
-  regs[E1000_RDTR] = 0; // interrupt after every received packet (no timer)
-  regs[E1000_RADV] = 0; // interrupt after every packet (no timer)
-  regs[E1000_IMS] = (1 << 7); // RXDW -- Receiver Descriptor Write Back
-}
+  regs[E1000_TIPG] = 10 | (8 << 10) | (6 << 20);
 
-/*
-int
-e1000_transmit(char *buf, int len)
-{
-  //
-  // Your code here.
-  //
-  // buf contains an ethernet frame; program it into
-  // the TX descriptor ring so that the e1000 sends it. Stash
-  // a pointer so that it can be freed after send completes.
-  //
-  // return 0 on success.
-  // return -1 on failure (e.g., there is no descriptor available)
-  // so that the caller knows to free buf.
-  //
+  // RX control
+  regs[E1000_RCTL] =
+      E1000_RCTL_EN |
+      E1000_RCTL_BAM |
+      E1000_RCTL_SZ_2048 |
+      E1000_RCTL_SECRC;
 
-  
-  return 0;
-}
+  // Interrupt moderation OFF
+  regs[E1000_RDTR] = 0;
+  regs[E1000_RADV] = 0;
 
-static void
-e1000_recv(void)
-{
-  //
-  // Your code here.
-  //
-  // Check for packets that have arrived from the e1000
-  // Create and deliver a buf for each packet (using net_rx()).
-  //
+     
+  regs[E1000_IMS] = (1 << 0) | (1 << 7);
 
 }
-*/
 
+// -------------------------------------------------------------
 
 static void
 e1000_recv(void)
 {
   acquire(&e1000_lock);
 
-  // index of last descriptor driver handed to device
   int rdt = regs[E1000_RDT] % RX_RING_SIZE;
-  // next descriptor the device will have filled (if any)
   int idx = (rdt + 1) % RX_RING_SIZE;
 
   while (rx_ring[idx].status & E1000_RXD_STAT_DD) {
-    int pkt_len = (int) rx_ring[idx].length;  // length written by device
-    char *pkt_buf = (char *) rx_ring[idx].addr;
 
-    // sanity: if addr==0, skip (device shouldn't have written to a 0 addr)
+    int pkt_len = (int)rx_ring[idx].length;
+    char *pkt_buf = (char*)rx_ring[idx].addr;
+
     if (!pkt_buf) {
-      // clear and hand back
       rx_ring[idx].status = 0;
       rx_ring[idx].length = 0;
       regs[E1000_RDT] = idx;
@@ -153,12 +134,8 @@ e1000_recv(void)
       continue;
     }
 
-    // Allocate a fresh buffer to replace this descriptor's buffer.
-    // We allocate while still holding e1000_lock so we can atomically update
-    // the descriptor and RDT before releasing the lock.
     char *newbuf = kalloc();
     if (!newbuf) {
-      // OOM: don't hand the descriptor back with a bad addr; clear so device skips.
       rx_ring[idx].addr = 0;
       rx_ring[idx].status = 0;
       rx_ring[idx].length = 0;
@@ -167,95 +144,75 @@ e1000_recv(void)
       continue;
     }
 
-    // Install new buffer into descriptor for future DMA.
-    rx_ring[idx].addr = (uint64) newbuf;
+    rx_ring[idx].addr = (uint64)newbuf;
     rx_ring[idx].length = 0;
     rx_ring[idx].csum = 0;
     rx_ring[idx].status = 0;
     rx_ring[idx].errors = 0;
     rx_ring[idx].special = 0;
 
-    // Make sure descriptor writes are visible before RDT update.
     __sync_synchronize();
 
-    // Tell device we've replenished the descriptor at idx
     regs[E1000_RDT] = idx;
-
-    // Advance to next descriptor before releasing lock
     idx = (idx + 1) % RX_RING_SIZE;
 
-    // release the e1000 lock before handing the packet to the network stack
     release(&e1000_lock);
 
-    // Hand the packet to the network stack (net_rx takes ownership of pkt_buf).
     net_rx(pkt_buf, pkt_len);
 
-    // Re-acquire to continue processing the RX ring
     acquire(&e1000_lock);
   }
 
   release(&e1000_lock);
 }
 
-
+// -------------------------------------------------------------
 
 void
 e1000_intr(void)
 {
-  // tell the e1000 we've seen this interrupt;
-  // without this the e1000 won't raise any
-  // further interrupts.
+//  printf("e1000_intr: interrupt\n");
+
   regs[E1000_ICR] = 0xffffffff;
 
   e1000_recv();
+
 }
 
+// -------------------------------------------------------------
 
 int
 e1000_transmit(char *buf, int len)
 {
-  //
-  // Place the ethernet frame `buf` (len bytes) into the TX descriptor ring
-  // for DMA by the E1000. On success return 0 (driver owns the buffer and
-  // will kfree() it later). On failure return -1 (caller must free buf).
-  //
   acquire(&e1000_lock);
 
-  // Read the device TDT (tail) register: index where device expects next desc.
   int tdt = regs[E1000_TDT] % TX_RING_SIZE;
 
-  // If the descriptor isn't free (DD not set) the ring is full.
+
+
   if (!(tx_ring[tdt].status & E1000_TXD_STAT_DD)) {
-    // ring full: cannot transmit now
+  //  printf("e1000_transmit: ring full at idx=%d, fail to queue\n", tdt);
     release(&e1000_lock);
     return -1;
   }
 
-  // If the descriptor previously referenced a buffer, free it.
   if (tx_ring[tdt].addr) {
-    // addr contains the kernel pointer previously used for DMA
-    kfree((char *)tx_ring[tdt].addr);
+    kfree((char*)tx_ring[tdt].addr);
     tx_ring[tdt].addr = 0;
   }
 
-  // Program the descriptor for this packet.
-  tx_ring[tdt].addr = (uint64) buf;     // DMA address of buffer
-  tx_ring[tdt].length = (uint16) len;   // length field is 16-bit in header
+  tx_ring[tdt].addr = (uint64)buf;
+  tx_ring[tdt].length = (uint16)len;
   tx_ring[tdt].cso = 0;
-  // Set command: End Of Packet and Report Status
   tx_ring[tdt].cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
-  // Clear the status; hardware will set DD when done
   tx_ring[tdt].status = 0;
   tx_ring[tdt].css = 0;
   tx_ring[tdt].special = 0;
 
-  // Make sure descriptor writes are visible to device before updating TDT
   __sync_synchronize();
 
-  // Advance the device tail so the card will fetch this descriptor.
   regs[E1000_TDT] = (tdt + 1) % TX_RING_SIZE;
 
   release(&e1000_lock);
   return 0;
 }
-

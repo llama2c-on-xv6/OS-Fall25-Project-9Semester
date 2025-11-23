@@ -1,17 +1,41 @@
+#ifndef NET_H
+#define NET_H
+
+#include "types.h"
+
+// Per-port queue limit used by the UDP receive implementation.
+#ifndef UDP_MAX_QUEUED
+#define UDP_MAX_QUEUED 16
+#endif
+
+// Exported kernel networking entry points used by other parts of xv6.
+// Implementations are in kernel/net.c
+int e1000_transmit(char *buf, int len);   // transmit an ethernet frame
+void ip_rx(char *buf, int len);            // called to process an incoming IP frame
+void arp_rx(char *buf);                    // ARP processing hook (sends reply)
+void net_rx(char *buf, int len);           // top-level frame demux (eth -> arp/ip/...)
+
+
+// Syscall entry point prototypes (implemented in kernel/net.c)
+uint64 sys_bind(void);
+uint64 sys_unbind(void);
+uint64 sys_recv(void);
+
+#endif // NET_H
+
+
+
+
+
+
+
+
+
+
+
 //
 // endianness support
 //
-
-
-
-//int send(int srcport, uint32 dst, int dport, char *buf, int len);
-//int recv(int port, uint32 *src, uint16 *sport, char *buf, int maxlen);
-//void bind(int port);
-
-
-
-
-
 
 static inline uint16 bswaps(uint16 val)
 {

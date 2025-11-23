@@ -319,8 +319,16 @@ ifeq ($(LAB),fs)
 CPUS := 1
 endif
 
-FWDPORT1 = $(shell expr `id -u` % 5000 + 25999)
-FWDPORT2 = $(shell expr `id -u` % 5000 + 30999)
+## FWDPORT1 = $(shell expr `id -u` % 5000 + 25999)
+## FWDPORT2 = $(shell expr `id -u` % 5000 + 30999)
+
+# deterministic port base
+PORTBASE := 25000
+
+FWDPORT1 := $(shell expr $(PORTBASE) + 999)
+FWDPORT2 := $(shell expr $(PORTBASE) + 1499)
+SERVERPORT := $(shell expr $(PORTBASE) +  99)
+
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 512M -smp $(CPUS) -nographic
 QEMUOPTS += -global virtio-mmio.force-legacy=false
@@ -347,11 +355,11 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	@echo "*** Now run 'gdb' in another window." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
-ifeq ($(LAB),net)
+## ifeq ($(LAB),net)
 # try to generate a unique port for the echo server
-SERVERPORT = $(shell expr `id -u` % 5000 + 25099)
+## SERVERPORT = $(shell expr `id -u` % 5000 + 25099)
 
-endif
+## endif
 
 ##
 ##  FOR testing lab grading script
