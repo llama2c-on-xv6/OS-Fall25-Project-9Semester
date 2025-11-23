@@ -199,9 +199,18 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_fputest\
-	$U/_sha256\
+	$U/_sha256_test\
+	$U/_udp_client\
 
+# Link udp_client with sha256.o
+$U/_udp_client: $U/udp_client.o $U/sha256.o $(ULIB)
+	$(LD) $(LDFLAGS) -T $U/user.ld -o $U/_udp_client $U/udp_client.o $U/sha256.o $(ULIB)
+	$(OBJDUMP) -S $U/_udp_client > $U/udp_client.asm
 
+# Link sha256_test standalone (only needs sha256.o, not udp_client.o)
+$U/_sha256_test: $U/sha256_test.o $U/sha256.o $(ULIB)
+	$(LD) $(LDFLAGS) -T $U/user.ld -o $U/_sha256_test $U/sha256_test.o $U/sha256.o $(ULIB)
+	$(OBJDUMP) -S $U/_sha256_test > $U/sha256_test.asm
 
 ifeq ($(LAB),util)
 UPROGS += \
