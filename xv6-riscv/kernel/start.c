@@ -14,6 +14,7 @@ __attribute__ ((aligned (16))) char stack0[4096 * NCPU];
 void
 start()
 {
+  w_mcounteren((1<<0) | (1<<1) | (1<<2)); // for rdtime
   // set M Previous Privilege mode to Supervisor, for mret.
   unsigned long x = r_mstatus();
   x &= ~MSTATUS_MPP_MASK;

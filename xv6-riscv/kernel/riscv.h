@@ -381,6 +381,15 @@ sfence_vma()
   asm volatile("sfence.vma zero, zero");
 }
 
+// rdtime for milestone-4 metrics
+static inline uint64
+rdtime_csr(void)
+{
+  uint64 x;
+  asm volatile("csrr %0, 0xc01" : "=r"(x));
+  return x;
+}
+
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
 

@@ -40,6 +40,7 @@ int ugetpid(void);
 uint64 pgpte(void*);
 void kpgtbl(void);
 #endif
+uint64 rdtime(void); //Rdtime
 
 // ulib.c
 int stat(const char*, struct stat*);

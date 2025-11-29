@@ -107,3 +107,9 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// milestone-4 metrics
+uint64
+sys_rdtime(void) {
+  return rdtime_csr();
+}
