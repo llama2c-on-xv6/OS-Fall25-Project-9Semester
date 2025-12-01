@@ -73,7 +73,7 @@ static void sha256_process_block(const uchar block[64], uint32 H[8]) {
 }
 
 /* Public API: compute SHA-256 hash */
-void sha256_hash(const uchar *data, unsigned int len, uchar hash[32]) {
+void sha256(const uchar *data, unsigned int len, uchar hash[32]) {
   uint32 H[8];
   int i;
   for (i = 0; i < 8; ++i) H[i] = H0_init[i];
@@ -117,6 +117,8 @@ void sha256_hash(const uchar *data, unsigned int len, uchar hash[32]) {
   }
 }
 
+/* ---------- Test vectors in main() ---------- 
+
 /* ---------- Helpers for test and printing ---------- */
 
 static void to_hex(const uchar in[32], char out[65]) {
@@ -138,7 +140,7 @@ static int hexstr_equal(const char *a, const char *b) {
   return a[i] == 0 && b[i] == 0;
 }
 
-/* ---------- Test vectors in main() ---------- */
+
 int main(void) {
   struct {
     const char *name;
@@ -164,7 +166,7 @@ int main(void) {
   for (i = 0; i < ntests; ++i) {
     uchar out[32];
     char hexout[65];
-    sha256_hash(tests[i].data, tests[i].len, out);
+    sha256(tests[i].data, tests[i].len, out);
     to_hex(out, hexout);
     int pass = hexstr_equal(hexout, tests[i].expected_hex);
     printf("%s: expected %s\n", tests[i].name, tests[i].expected_hex);
@@ -177,3 +179,4 @@ int main(void) {
   exit(0);
   return 0;
 }
+*/

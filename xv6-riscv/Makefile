@@ -146,7 +146,7 @@ $K/%.o: $K/%.S
 tags: $(OBJS)
 	etags kernel/*.S kernel/*.c
 
-ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+ULIB = $U/sha256.o $U/udp_client.o $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 
 ifeq ($(LAB),lock)
 ULIB += $U/statistics.o
@@ -201,6 +201,8 @@ UPROGS=\
 	$U/_fputest\
 	$U/_sha256\
 	$U/_rdtime_test\
+	$U/_udp_test\
+	
 
 
 
@@ -337,7 +339,7 @@ QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 QEMUOPTS += -icount shift=0 # for Rdtime
 ifeq ($(LAB),net)
-QEMUOPTS += -netdev user,id=net0,hostfwd=udp::$(FWDPORT1)-:2000,hostfwd=udp::$(FWDPORT2)-:2001 -object filter-dump,id=net0,netdev=net0,file=packets.pcap
+QEMUOPTS += -netdev user,id=net0,hostfwd=udp::$(FWDPORT1)-:$(FWDPORT1),hostfwd=udp::$(FWDPORT2)-:$(FWDPORT2) -object filter-dump,id=net0,netdev=net0,file=packets.pcap
 QEMUOPTS += -device e1000,netdev=net0,bus=pcie.0,romfile=
 endif
 
