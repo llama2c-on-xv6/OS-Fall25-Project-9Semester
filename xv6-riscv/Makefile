@@ -146,7 +146,8 @@ $K/%.o: $K/%.S
 tags: $(OBJS)
 	etags kernel/*.S kernel/*.c
 
-ULIB = $U/sha256.o $U/udp_client.o $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+ULIB = $U/ulib.o $U/stdlib.o $U/usys.o $U/printf.o $U/umalloc.o
+#$U/udp_client.o
 
 ifeq ($(LAB),lock)
 ULIB += $U/statistics.o
@@ -168,6 +169,19 @@ $U/_forktest: $U/forktest.o $(ULIB)
 	# in order to be able to max out the proc table.
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
 	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
+
+# Build sha256.o
+$U/sha256.o: user/sha256.c
+	$(CC) $(CFLAGS) -c -o $U/sha256.o $U/sha256.c
+
+# Build udp_client.o
+$U/udp_client.o: user/udp_client.c
+	$(CC) $(CFLAGS) -c -o $U/udp_client.o $U/udp_client.c
+
+# Build udp_test user program
+$U/_udp_test: $U/udp_test.o $U/sha256.o $U/udp_client.o $(ULIB)
+	$(LD) $(LDFLAGS) -o $U/_udp_test \
+		$U/udp_test.o $U/sha256.o $U/udp_client.o $(ULIB)	
 
 mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 	gcc $(XCFLAGS) -Wno-unknown-attributes -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
@@ -199,9 +213,9 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_fputest\
-	$U/_sha256\
 	$U/_rdtime_test\
 	$U/_udp_test\
+	$U/_stdlib_test\
 	
 
 

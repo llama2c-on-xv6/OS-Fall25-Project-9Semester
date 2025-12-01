@@ -98,6 +98,7 @@ stat(const char *n, struct stat *st)
   return r;
 }
 
+/*
 int
 atoi(const char *s)
 {
@@ -108,6 +109,7 @@ atoi(const char *s)
     n = n*10 + *s++ - '0';
   return n;
 }
+*/
 
 void*
 memmove(void *vdst, const void *vsrc, int n)

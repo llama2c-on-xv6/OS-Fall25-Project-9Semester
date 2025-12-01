@@ -117,10 +117,11 @@ void sha256(const uchar *data, unsigned int len, uchar hash[32]) {
   }
 }
 
-/* ---------- Test vectors in main() ---------- 
 
 /* ---------- Helpers for test and printing ---------- */
 
+
+/*
 static void to_hex(const uchar in[32], char out[65]) {
   static const char hex[] = "0123456789abcdef";
   int i;
@@ -139,6 +140,7 @@ static int hexstr_equal(const char *a, const char *b) {
   }
   return a[i] == 0 && b[i] == 0;
 }
+
 
 
 int main(void) {
