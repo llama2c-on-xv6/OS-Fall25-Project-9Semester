@@ -170,6 +170,14 @@ $U/_forktest: $U/forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
 	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
 
+# Build string.o
+#$U/string.o: user/string.c 
+#	$(CC) $(CFLAGS) -c -o $U/string.o user/string.c	
+
+#$U/_string_test: $U/string_test.o $U/string.o $(ULIB)
+#	$(LD) $(LDFLAGS) -o $U/_string_test \
+#		$U/string_test.o $U/string.o $(ULIB)	
+
 # Build sha256.o
 $U/sha256.o: user/sha256.c
 	$(CC) $(CFLAGS) -c -o $U/sha256.o $U/sha256.c
@@ -216,6 +224,7 @@ UPROGS=\
 	$U/_rdtime_test\
 	$U/_udp_test\
 	$U/_stdlib_test\
+	$U/_string_test\
 	
 
 

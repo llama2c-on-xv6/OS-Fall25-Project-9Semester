@@ -17,6 +17,7 @@ start(int argc, char **argv)
   exit(r);
 }
 
+/*
 char*
 strcpy(char *s, const char *t)
 {
@@ -27,6 +28,7 @@ strcpy(char *s, const char *t)
     ;
   return os;
 }
+
 
 int
 strcmp(const char *p, const char *q)
@@ -46,6 +48,8 @@ strlen(const char *s)
   return n;
 }
 
+
+
 void*
 memset(void *dst, int c, uint n)
 {
@@ -56,6 +60,41 @@ memset(void *dst, int c, uint n)
   }
   return dst;
 }
+
+*/
+
+void *
+memset(void *s, int c, size_t n) {
+    unsigned char *p = s;
+    unsigned char cc = (unsigned char)c;
+    for (size_t i = 0; i < n; ++i) p[i] = cc;
+    return s;
+}
+
+int strcmp(const char *s1, const char *s2) {
+    while (*s1 && (*s1 == *s2)) {
+        s1++; s2++;
+    }
+    return (unsigned char)*s1 - (unsigned char)*s2;
+}
+
+size_t strlen(const char *s) {
+    const char *p = s;
+    while (*p) ++p;
+    return (size_t)(p - s);
+}
+
+char *strcpy(char *dst, const char *src) {
+    char *d = dst;
+    while ((*d++ = *src++));
+    return dst;
+}
+
+
+
+
+
+
 
 char*
 strchr(const char *s, char c)
@@ -145,19 +184,36 @@ memcmp(const void *s1, const void *s2, uint n)
   return 0;
 }
 
+/*
 void *
 memcpy(void *dst, const void *src, uint n)
 {
   return memmove(dst, src, n);
 }
+*/  
 
-char *
-sbrk(int n) {
-  return sys_sbrk(n, SBRK_EAGER);
+void *
+memcpy(void *dst, const void *src, size_t n) {
+    unsigned char *d = dst;
+    const unsigned char *s = src;
+    for (size_t i = 0; i < n; ++i) d[i] = s[i];
+    return dst;
 }
 
 char *
-sbrklazy(int n) {
-  return sys_sbrk(n, SBRK_LAZY);
+sbrk(int n)
+{
+  uint64 addr = sys_sbrk(n, SBRK_EAGER);
+  if ((long)addr < 0)
+    return 0;
+  return (char *)addr;
 }
 
+char *
+sbrklazy(int n)
+{
+  uint64 addr = sys_sbrk(n, SBRK_LAZY);
+  if ((long)addr < 0)
+    return 0;
+  return (char *)addr;
+}

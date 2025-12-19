@@ -10,6 +10,17 @@
 #include "kernel/types.h"
 #include "user/user.h"
 #include "user/udp_client.h"    // provides fetch_model_weights, fetch_tokenizer
+#include "user/string.h"
+
+#define stdin   0
+#define stdout  1
+#define stderr  2
+
+
+
+
+
+
 
 // rdtime tick frequency: ticks per second
 #ifndef RD_TIME_FREQ
@@ -91,7 +102,7 @@ void malloc_run_state(RunState* s, Config* p) {
     // ensure all mallocs went fine
     if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 || !s->q
      || !s->key_cache || !s->value_cache || !s->att || !s->logits) {
-        fprintf(stderr, "malloc failed!\n");
+        fprintf(2, "malloc failed!\n");
         exit(EXIT_FAILURE);
     }
 }
@@ -148,13 +159,13 @@ void read_checkpoint(char* checkpoint_unused, Config* config, TransformerWeights
     int fetched_size = 0;
     char *buf = fetch_model_weights(&fetched_size);
     if (!buf || fetched_size <= 0) {
-        fprintf(stderr, "Couldn't fetch model weights over network\n");
+        fprintf(2, "Couldn't fetch model weights over network\n");
         exit(EXIT_FAILURE);
     }
 
     // 2) sanity check - must at least contain Config
     if (fetched_size < (int)sizeof(Config)) {
-        fprintf(stderr, "Fetched model too small: %d < %zu\n", fetched_size, sizeof(Config));
+        fprintf(2, "Fetched model too small: %d < %zu\n", fetched_size, sizeof(Config));
         free(buf);
         exit(EXIT_FAILURE);
     }
@@ -173,7 +184,7 @@ void read_checkpoint(char* checkpoint_unused, Config* config, TransformerWeights
         // misaligned: allocate an aligned buffer and copy weights into it
         float *aligned_weights = malloc(weights_bytes + sizeof(float)); // small overalloc just in case
         if (!aligned_weights) {
-            fprintf(stderr, "malloc failed for aligned_weights (%zu bytes)\n", weights_bytes);
+            fprintf(2, "malloc failed for aligned_weights (%zu bytes)\n", weights_bytes);
             free(buf);
             exit(EXIT_FAILURE);
         }
@@ -431,9 +442,9 @@ void build_tokenizer(Tokenizer* t, char* tokenizer_path_unused, int vocab_size) 
 
     t->vocab_size = vocab_size;
     t->vocab = (char**)malloc(vocab_size * sizeof(char*));
-    if (!t->vocab) { fprintf(stderr, "malloc failed for vocab pointers\n"); exit(EXIT_FAILURE); }
+    if (!t->vocab) { fprintf(2, "malloc failed for vocab pointers\n"); exit(EXIT_FAILURE); }
     t->vocab_scores = (float*)malloc(vocab_size * sizeof(float));
-    if (!t->vocab_scores) { fprintf(stderr, "malloc failed for vocab_scores\n"); exit(EXIT_FAILURE); }
+    if (!t->vocab_scores) { fprintf(2, "malloc failed for vocab_scores\n"); exit(EXIT_FAILURE); }
     t->sorted_vocab = NULL;
 
     for (int i = 0; i < 256; i++) {
@@ -445,7 +456,7 @@ void build_tokenizer(Tokenizer* t, char* tokenizer_path_unused, int vocab_size) 
     int tok_size = 0;
     char *tok_buf = fetch_tokenizer(&tok_size);
     if (!tok_buf || tok_size <= 0) {
-        fprintf(stderr, "Couldn't fetch tokenizer over network\n");
+        fprintf(2, "Couldn't fetch tokenizer over network\n");
         exit(EXIT_FAILURE);
     }
 
@@ -454,27 +465,27 @@ void build_tokenizer(Tokenizer* t, char* tokenizer_path_unused, int vocab_size) 
     char *endp = tok_buf + tok_size;
 
     // max_token_length
-    if (p + (int)sizeof(int) > endp) { fprintf(stderr, "tokenizer truncated (max_token_length)\n"); free(tok_buf); exit(EXIT_FAILURE); }
+    if (p + (int)sizeof(int) > endp) { fprintf(2, "tokenizer truncated (max_token_length)\n"); free(tok_buf); exit(EXIT_FAILURE); }
     memcpy(&t->max_token_length, p, sizeof(int));
     p += sizeof(int);
 
     for (int i = 0; i < vocab_size; i++) {
         // read score
-        if (p + (int)sizeof(float) > endp) { fprintf(stderr, "tokenizer truncated at score %d\n", i); free(tok_buf); exit(EXIT_FAILURE); }
+        if (p + (int)sizeof(float) > endp) { fprintf(2, "tokenizer truncated at score %d\n", i); free(tok_buf); exit(EXIT_FAILURE); }
         memcpy(&t->vocab_scores[i], p, sizeof(float));
         p += sizeof(float);
 
         // read length of string
-        if (p + (int)sizeof(int) > endp) { fprintf(stderr, "tokenizer truncated at len %d\n", i); free(tok_buf); exit(EXIT_FAILURE); }
+        if (p + (int)sizeof(int) > endp) { fprintf(2, "tokenizer truncated at len %d\n", i); free(tok_buf); exit(EXIT_FAILURE); }
         int len = 0;
         memcpy(&len, p, sizeof(int));
         p += sizeof(int);
 
-        if (len < 0 || p + len > endp) { fprintf(stderr, "tokenizer bad len %d at idx %d\n", len, i); free(tok_buf); exit(EXIT_FAILURE); }
+        if (len < 0 || p + len > endp) { fprintf(2, "tokenizer bad len %d at idx %d\n", len, i); free(tok_buf); exit(EXIT_FAILURE); }
 
         // allocate and copy token string
         t->vocab[i] = (char *)malloc(len + 1);
-        if (!t->vocab[i]) { fprintf(stderr, "malloc failed for vocab[%d]\n", i); free(tok_buf); exit(EXIT_FAILURE); }
+        if (!t->vocab[i]) { fprintf(2, "malloc failed for vocab[%d]\n", i); free(tok_buf); exit(EXIT_FAILURE); }
         memcpy(t->vocab[i], p, len);
         t->vocab[i][len] = '\0';
         p += len;
@@ -528,7 +539,7 @@ int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size) {
 void encode(Tokenizer* t, char *text, int8_t bos, int8_t eos, int *tokens, int *n_tokens) {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    if (text == NULL) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
+    if (text == NULL) { fprintf(2, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
 
     if (t->sorted_vocab == NULL) {
         // lazily malloc and sort the vocabulary
@@ -812,7 +823,7 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
     int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
     encode(tokenizer, prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
     if (num_prompt_tokens < 1) {
-        fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
+        fprintf(2, "something is wrong, expected at least 1 prompt token\n");
         exit(EXIT_FAILURE);
     }
 
@@ -853,7 +864,7 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
     // report achieved tok/s (pos-1 because the timer starts after first iteration)
     if (pos > 1) {
         long end = time_in_ms();
-        fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
+        fprintf(2, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
     }
 
     free(prompt_tokens);
@@ -870,7 +881,7 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
     int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
     encode(tokenizer, prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
     if (num_prompt_tokens < 1) {
-        fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
+        fprintf(2, "something is wrong, expected at least 1 prompt token\n");
         exit(EXIT_FAILURE);
     }
 
@@ -917,12 +928,12 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
 
         if (ticks == 0) {
             // couldn't measure elapsed ticks (too fast / tick frequency too coarse)
-            fprintf(stderr, "achieved tok/s: (measurement too fast; ticks delta = 0)\n");
+            fprintf(2, "achieved tok/s: (measurement too fast; ticks delta = 0)\n");
         } else {
             double seconds = (double)ticks / (double)RD_TIME_FREQ;
             double toks = (double)(pos - 1); // we started timing after first iteration
             double toks_per_sec = toks / seconds;
-            fprintf(stderr, "achieved tok/s: %f (tokens=%d, ticks=%llu, freq=%llu)\n",
+            fprintf(2, "achieved tok/s: %f (tokens=%d, ticks=%llu, freq=%llu)\n",
                     toks_per_sec, pos-1, (unsigned long long)ticks, (unsigned long long)RD_TIME_FREQ);
         }
     }
@@ -1038,17 +1049,17 @@ void chat(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
 #ifndef TESTING
 
 void error_usage() {
-    fprintf(stderr, "Usage:   run <checkpoint> [options]\n");
-    fprintf(stderr, "Example: run model.bin -n 256 -i \"Once upon a time\"\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -t <float>  temperature in [0,inf], default 1.0\n");
-    fprintf(stderr, "  -p <float>  p value in top-p (nucleus) sampling in [0,1] default 0.9\n");
-    fprintf(stderr, "  -s <int>    random seed, default time(NULL)\n");
-    fprintf(stderr, "  -n <int>    number of steps to run for, default 256. 0 = max_seq_len\n");
-    fprintf(stderr, "  -i <string> input prompt\n");
-    fprintf(stderr, "  -z <string> optional path to custom tokenizer\n");
-    fprintf(stderr, "  -m <string> mode: generate|chat, default: generate\n");
-    fprintf(stderr, "  -y <string> (optional) system prompt in chat mode\n");
+    fprintf(2, "Usage:   run <checkpoint> [options]\n");
+    fprintf(2, "Example: run model.bin -n 256 -i \"Once upon a time\"\n");
+    fprintf(2, "Options:\n");
+    fprintf(2, "  -t <float>  temperature in [0,inf], default 1.0\n");
+    fprintf(2, "  -p <float>  p value in top-p (nucleus) sampling in [0,1] default 0.9\n");
+    fprintf(2, "  -s <int>    random seed, default time(NULL)\n");
+    fprintf(2, "  -n <int>    number of steps to run for, default 256. 0 = max_seq_len\n");
+    fprintf(2, "  -i <string> input prompt\n");
+    fprintf(2, "  -z <string> optional path to custom tokenizer\n");
+    fprintf(2, "  -m <string> mode: generate|chat, default: generate\n");
+    fprintf(2, "  -y <string> (optional) system prompt in chat mode\n");
     exit(EXIT_FAILURE);
 }
 
@@ -1109,7 +1120,7 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(mode, "chat") == 0) {
         chat(&transformer, &tokenizer, &sampler, prompt, system_prompt, steps);
     } else {
-        fprintf(stderr, "unknown mode: %s\n", mode);
+        fprintf(2, "unknown mode: %s\n", mode);
         error_usage();
     }
 

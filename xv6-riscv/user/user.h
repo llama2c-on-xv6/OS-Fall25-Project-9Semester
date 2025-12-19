@@ -1,11 +1,24 @@
+#include "kernel/types.h"
+#include <stddef.h>
+#include <stdarg.h>
+
 #ifdef LAB_MMAP
-typedef unsigned long size_t;
+
 typedef long int off_t;
 #endif
+
+typedef unsigned long size_t;
 
 #define SBRK_ERROR ((char *)-1)
 
 struct stat;
+
+
+#define stdout 1
+#define stderr 2
+
+
+
 
 // system calls
 int fork(void);
@@ -26,7 +39,6 @@ int mkdir(const char*);
 int chdir(const char*);
 int dup(int);
 int getpid(void);
-char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
 #ifdef LAB_NET
@@ -44,25 +56,50 @@ uint64 rdtime(void); //Rdtime
 
 // ulib.c
 int stat(const char*, struct stat*);
-char* strcpy(char*, const char*);
+//char* strcpy(char*, const char*);
 void *memmove(void*, const void*, int);
 char* strchr(const char*, char c);
-int strcmp(const char*, const char*);
+
 char* gets(char*, int max);
-uint strlen(const char*);
-void* memset(void*, int, uint);
+//uint strlen(const char*);
+//void* memset(void*, int, uint);
 int atoi(const char*);
 int memcmp(const void *, const void *, uint);
-void *memcpy(void *, const void *, uint);
+//void *memcpy(void *, const void *, uint);
+
+
+
+uint64 sys_sbrk(int n, int t);
 char* sbrk(int);
 char* sbrklazy(int);
 #ifdef LAB_LOCK
 int statistics(void*, int);
 #endif
 
-// printf.c
-void fprintf(int, const char*, ...) __attribute__ ((format (printf, 2, 3)));
-void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
+
+
+// string / memory
+void *memcpy(void *, const void *, size_t);
+void *memset(void *, int, size_t);
+int strcmp(const char *, const char *);
+size_t strlen(const char *);
+char *strcpy(char *, const char *);
+char *strchr(const char *, char);
+
+// character
+int isprint(int);
+int isspace(int);
+
+// formatting
+int printf(const char *, ...);
+int fprintf(int, const char *, ...);
+int fdprintf(int, const char *, ...);
+int sprintf(char *, const char *, ...);
+int vsnprintf(char *, size_t, const char *, __builtin_va_list);
+
+// scanning
+int sscanf(const char *, const char *, ...);
+int vsscanf(const char *, const char *, __builtin_va_list);
 
 // umalloc.c
 void* malloc(uint);
