@@ -41,6 +41,13 @@ uint64 pgpte(void*);
 void kpgtbl(void);
 #endif
 uint64 rdtime(void); //Rdtime
+int thread_create(void (*start_routine)(void*), void *arg);
+int thread_join(int tid);
+void thread_exit(void);
+int mutex_init(int *mutex);
+void mutex_lock(int *mutex);
+void mutex_unlock(int *mutex);
+
 
 // ulib.c
 int stat(const char*, struct stat*);

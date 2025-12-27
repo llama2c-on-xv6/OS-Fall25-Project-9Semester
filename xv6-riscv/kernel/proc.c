@@ -5,6 +5,11 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+// At top include:
+#include "mutex.h"  
+
+// Ensure kmutex table is initialized in userinit() or main()
+extern void kmutex_init_table(void);
 
 struct cpu cpus[NCPU];
 
@@ -708,3 +713,104 @@ procdump(void)
     printf("\n");
   }
 }
+
+
+// We will grow the address space of the shared pagetable by one page at a time.
+// Function: allocate_user_stack_shared(pagetable, &sz, &ustack_top)
+static int
+allocate_user_stack_shared(pagetable_t pagetable, uint64 *sz, uint64 *ustack_top)
+{
+  // We'll allocate one page at the current sz (aligned).  Caller must provide pointer to current size (sz).
+  // After allocation, sz increases by PGSIZE, and the new stack top is sz (user stack grows down)
+  uint64 oldsz = *sz;
+  uint64 newsz = oldsz + PGSIZE;
+  // Note: in xv6-riscv the function to allocate user pages in a pagetable is uvmalloc(pagetable, oldsz, newsz)
+  // If your tree uses a different name, change accordingly.
+  if (uvmalloc(pagetable, oldsz, newsz) == 0) {
+    return -1;
+  }
+  *sz = newsz;
+  // user stack top should be newsz (stack pointer initial = newsz)
+  *ustack_top = newsz;
+  return 0;
+}
+
+// Thread creation kernel-level helper
+int
+create_thread(struct proc *p, void (*start_routine)(void *), void *arg)
+{
+  struct proc *np;
+  // Allocate proc structure
+  if ((np = allocproc()) == 0) {
+    return -1;
+  }
+
+  // Share the page table with the parent (no copy)
+  acquire(&np->lock);
+  // free the freshly allocated user pagetable and replace with parent's pagetable
+  // Note: allocproc sets up a new pagetable and kstack; we must remove the user pagetable from np and use p->pagetable.
+  // If your allocproc already calls uvmcreate or equivalent, free it:
+  if (np->pagetable)
+    uvmfree(np->pagetable, np->sz); // free what allocproc created, if any. (adapt if names differ)
+
+  np->pagetable = p->pagetable;
+  np->sz = p->sz;
+  np->is_thread = 1;
+  np->tgid = p->pid;    // group id is parent's pid
+  np->tid = np->pid;    // threads use pid as tid
+  np->parent = p;       // parent to help with exit/wakeup
+  np->killed = 0;
+  np->xstate = 0;
+  np->tjoiner = 0;
+
+  // Allocate user stack region within the shared pagetable (one page)
+  uint64 ustack_top;
+  if (allocate_user_stack_shared(np->pagetable, &np->sz, &ustack_top) < 0) {
+    // cleanup
+    release(&np->lock);
+    np->state = UNUSED;
+    return -1;
+  }
+  np->ustack = ustack_top;
+
+  // Copy parent's trapframe to child's trapframe and set up user registers
+  // Note: copy the trapframe so child returns as if from thread entry.
+  *(np->trapframe) = *(p->trapframe);
+
+  // set up user stack pointer and argument passing
+  // We want child to start executing at start_routine with arg as parameter.
+  // Implementation: push a small fake stack frame with 'arg' and fake return address 0, and set tf->sp to point to it.
+  uint64 sp = np->ustack;
+  // place a fake return address (0) to cause exit if start_routine returns
+  sp -= sizeof(uint64);
+  if (copyout(np->pagetable, sp, (char *)&(uint64){0}, sizeof(uint64)) < 0) {
+    release(&np->lock);
+    np->state = UNUSED;
+    return -1;
+  }
+  // push the arg
+  sp -= sizeof(uint64);
+  if (copyout(np->pagetable, sp, (char *)&arg, sizeof(uint64)) < 0) {
+    release(&np->lock);
+    np->state = UNUSED;
+    return -1;
+  }
+
+  // set child's trapframe registers
+  // on RISC-V, the argument is passed in a0, return address in ra
+  np->trapframe->a0 = (uint64)arg;    // first arg in a0
+  np->trapframe->sp = sp;             // user stack pointer
+  np->trapframe->ra = (uint64)thread_stub_return; // point to a small stub/trampoline in userland/kernel that calls start_routine
+
+  // We'll use a small kernel trampoline that switches to user and begins at start_routine.
+  // For simplicity, set the user program counter to start_routine.
+  np->trapframe->epc = (uint64)start_routine;
+
+  // Mark thread runnable
+  np->state = RUNNABLE;
+  release(&np->lock);
+
+  // return the tid (pid)
+  return np->pid;
+}
+

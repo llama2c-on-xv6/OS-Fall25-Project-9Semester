@@ -148,12 +148,10 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-   // Floating-point registers saved for this process
-  // Store as 64-bit to hold binary64 representation of f registers.
-  // RISC-V F-extension uses 64-bit f registers in RV64.
-  //unsigned long fregs[NFREGS];   // f0..f31
-  //unsigned int fcsr;             // floating-point control and status register
+  int is_thread;        // 0 = normal process, 1 = thread
+  int tgid;             // thread-group id (pid of main process)
+  int tid;              // thread id (same as pid for the proc)
+  uint64 ustack;        // top of the user's stack for this thread (virtual addr)
+  struct proc *tjoiner; // optional: pointer to process that called thread_join, for convenience
 
-  // a flag to indicate whether this process has used the FPU (for lazy save/restore)
- // int has_fpu;
 };

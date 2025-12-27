@@ -49,3 +49,9 @@ entry("recv");
 entry("pgpte");
 entry("kpgtbl");
 entry("rdtime");
+entry("thread_create")
+entry("thread_join")
+entry("thread_exit")
+entry("mutex_init")
+entry("mutex_lock")
+entry("mutex_unlock")

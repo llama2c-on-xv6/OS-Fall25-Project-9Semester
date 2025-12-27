@@ -152,6 +152,13 @@ static uint64 (*syscalls[])(void) = {
 [SYS_kpgtbl] sys_kpgtbl,
 #endif
 [SYS_rdtime] sys_rdtime,
+[SYS_thread_create]    sys_thread_create,
+[SYS_thread_join]      sys_thread_join,
+[SYS_thread_exit]      sys_thread_exit,
+[SYS_mutex_init]       sys_mutex_init,
+[SYS_mutex_lock]       sys_mutex_lock,
+[SYS_mutex_unlock]     sys_mutex_unlock,
+
 };
 
 

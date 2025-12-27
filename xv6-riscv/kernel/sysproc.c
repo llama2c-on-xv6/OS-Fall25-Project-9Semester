@@ -6,6 +6,87 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "vm.h"
+#include "mutex.h"
+
+uint64
+sys_thread_create(void)
+{
+  uint64 startptr;
+  uint64 argptr;
+
+  if (argaddr(0, &startptr) < 0)
+    return -1;
+  if (argaddr(1, &argptr) < 0)
+    return -1;
+
+  void (*start_routine)(void *) = (void(*)(void *))startptr;
+  void *arg = (void*)argptr;
+
+  return (uint64)create_thread(myproc(), start_routine, arg);
+}
+
+uint64
+sys_thread_exit(void)
+{
+  // no args
+  thread_exit();
+  return 0; // not reached
+}
+
+uint64
+sys_thread_join(void)
+{
+  int tid;
+  if (argint(0, &tid) < 0)
+    return -1;
+  return (uint64)thread_join(myproc(), tid);
+}
+
+// mutex syscalls
+uint64
+sys_mutex_init(void)
+{
+  uint64 user_addr;
+  if (argaddr(0, &user_addr) < 0)
+    return -1;
+  int idx = kmutex_find_or_alloc(user_addr);
+  return (uint64)idx; // return index >=0 or -1
+}
+
+uint64
+sys_mutex_lock(void)
+{
+  uint64 user_addr;
+  if (argaddr(0, &user_addr) < 0)
+    return -1;
+  int idx = kmutex_find_or_alloc(user_addr);
+  if (idx < 0) return -1;
+  struct kmutex *km = kmutex_get(idx);
+  acquire(&km->lk);
+  while (km->locked) {
+    // sleep on kmutex pointer; this releases km->lk and swings back when woken
+    sleep(km, &km->lk);
+  }
+  km->locked = 1;
+  release(&km->lk);
+  return 0;
+}
+
+uint64
+sys_mutex_unlock(void)
+{
+  uint64 user_addr;
+  if (argaddr(0, &user_addr) < 0)
+    return -1;
+  int idx = kmutex_find_or_alloc(user_addr);
+  if (idx < 0) return -1;
+  struct kmutex *km = kmutex_get(idx);
+  acquire(&km->lk);
+  km->locked = 0;
+  wakeup(km);
+  release(&km->lk);
+  return 0;
+}
 
 uint64
 sys_exit(void)

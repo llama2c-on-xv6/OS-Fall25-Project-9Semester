@@ -36,3 +36,9 @@
 #define SYS_pgpte     33
 #define SYS_kpgtbl    34
 #define SYS_rdtime    35
+#define SYS_thread_create 36
+#define SYS_thread_join   37
+#define SYS_thread_exit   38
+#define SYS_mutex_init    39
+#define SYS_mutex_lock    40
+#define SYS_mutex_unlock  41
